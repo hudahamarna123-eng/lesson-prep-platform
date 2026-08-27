@@ -8,6 +8,9 @@
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
+<!-- Firebase: تُستخدم لتخزين التحضيرات في السحابة بحيث يظهر أي تحضير للمشرف/المدير فوراً من أي جهاز -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
   body { margin: 0; font-family: 'Segoe UI', Tahoma, Arial, sans-serif; background:#020617; }
   #root { min-height: 100vh; }
@@ -33,9 +36,49 @@ const { useState, useEffect, useRef } = React;
 
 // ==========================================
 // CONFIGURATION & INITIALIZATION
-// (يعمل هذا الإصدار بالكامل محلياً داخل المتصفح دون أي خادم خارجي -
-//  يتم حفظ كل البيانات في ذاكرة الجلسة الحالية فقط)
 // ==========================================
+
+// ════════════════════════════════════════════════════════════════════
+// 🔥 إعدادات التخزين السحابي المشترك (Firebase)
+// ------------------------------------------------------------------
+// عبّئي القيم الست التالية ببيانات مشروع Firebase الخاص بمدرستكم (مجاني)
+// حتى يصل أي تحضير يحفظه المعلم فوراً لأي جهاز يفتح منه المشرف/المدير.
+//
+// كيفية الحصول عليها (خطوات سريعة):
+//  1) اذهبي إلى: https://console.firebase.google.com
+//  2) أنشئي مشروعاً جديداً (Add project) باسم مثل: salaf-lesson-plans
+//  3) من القائمة الجانبية اختاري Build > Firestore Database > Create database
+//     ثم اختاري "Start in test mode" (يمكن تشديد الحماية لاحقاً).
+//  4) من صفحة إعدادات المشروع (⚙️ Project settings) > تبويب General >
+//     انزلي لقسم "Your apps" واضغطي أيقونة الويب </> لإنشاء تطبيق ويب،
+//     ثم انسخي القيم الظاهرة داخل كائن firebaseConfig وألصقيها بالأسفل.
+//
+// ما دامت هذه القيم فارغة، سيستمر التطبيق بالعمل محلياً في هذا المتصفح
+// فقط (كما كان سابقاً) دون أي مزامنة بين الأجهزة.
+// ════════════════════════════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey: "AIzaSyCDfDUDF4uQA1CYYLOFqBPf8vhiHn5VT_s",
+  authDomain: "salaf-lesson-plans.firebaseapp.com",
+  projectId: "salaf-lesson-plans",
+  storageBucket: "salaf-lesson-plans.firebasestorage.app",
+  messagingSenderId: "780604640631",
+  appId: "1:780604640631:web:d76fba73415b4d5611e572"
+};
+
+let db = null;
+let cloudEnabled = false;
+try {
+  if (firebaseConfig.apiKey && firebaseConfig.projectId) {
+    const fbApp = firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    cloudEnabled = true;
+  }
+} catch (fbErr) {
+  console.error("تعذّرت تهيئة Firebase:", fbErr);
+  db = null;
+  cloudEnabled = false;
+}
+
 let idCounter = 1;
 const generateId = () => `local_${Date.now()}_${idCounter++}`;
 
@@ -425,14 +468,37 @@ function App() {
     return () => window.removeEventListener('popstate', handleUrlRoleChange);
   }, [currentUserRole, adminUnlocked]);
 
-  // تفعيل الجلسة المحلية (يعمل هذا الإصدار بالكامل داخل المتصفح بدون خادم سحابي)
+  // الاتصال بالسحابة (Firestore) إن كانت الإعدادات مُعبّأة، والاستماع اللحظي
+  // لأي تحضير يُضاف/يُعدّل/يُحذف من أي جهاز آخر (معلم أو مشرف أو مدير)
   useEffect(() => {
-    setAuthStatus("الجلسة المحلية نشطة ⚡ (بيانات مؤقتة لهذا المتصفح فقط)");
     simulateDriveCreation();
+
+    if (!cloudEnabled || !db) {
+      setAuthStatus("⚠️ الوضع المحلي فقط (لم يتم ربط التخزين السحابي بعد - راجع تعليمات firebaseConfig)");
+      return;
+    }
+
+    setAuthStatus("جاري الاتصال بالسحابة...");
+    const unsubscribe = db.collection("preparations")
+      .orderBy("createdAt", "desc")
+      .onSnapshot(
+        (snapshot) => {
+          const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          setPreparations(docs);
+          setAuthStatus("متصل بالسحابة ✅ (كل تحضير يظهر فوراً لجميع الأجهزة)");
+        },
+        (err) => {
+          addLog(`🔴 خطأ اتصال بالسحابة: ${err.message}`);
+          setAuthStatus("⚠️ تعذّر الاتصال بالسحابة - تحقق من إعدادات firebaseConfig وقواعد Firestore");
+        }
+      );
+    return () => unsubscribe();
   }, []);
 
-  // تحميل بيانات تجريبية أولية فقط إذا لم يكن هناك أي تحضيرات محفوظة سابقاً من المستخدم
+  // تحميل بيانات تجريبية أولية فقط في الوضع المحلي (بدون سحابة)، وفقط إذا لم
+  // يكن هناك أي تحضيرات محفوظة سابقاً من المستخدم في هذا المتصفح
   useEffect(() => {
+    if (cloudEnabled) return; // في الوضع السحابي، preparations تُحمّل من Firestore مباشرة
     setPreparations(prev => {
       if (prev.length > 0) return prev;
       const storedAlready = loadStoredPreparations();
@@ -455,8 +521,8 @@ function App() {
     });
   }, []);
 
-  // حفظ تلقائي ودائم لكل التحضيرات في متصفحك بعد أي إضافة/تعديل/حذف،
-  // حتى تبقى محفوظة عند إغلاق الملف وإعادة فتحه لاحقاً (ولا تُحذف إلا يدوياً)
+  // حفظ احتياطي محلي (يعمل دائماً كنسخة احتياطية بغض النظر عن حالة السحابة،
+  // وهو المصدر الوحيد للبيانات إن لم تُربط السحابة بعد)
   useEffect(() => {
     try {
       localStorage.setItem(PREPARATIONS_STORAGE_KEY, JSON.stringify(preparations));
@@ -655,15 +721,39 @@ function App() {
       driveUrl: `https://drive.google.com/drive/folders/SchoolSmartLessonPlans/${targetFolder}`
     };
 
-    if (selectedPrepId) {
-      setPreparations(prev => prev.map(p => p.id === selectedPrepId ? { ...p, ...payload, id: selectedPrepId } : p));
-      if (!silent) showToast(`🔄 تم تحديث التحضير بنجاح ومزامنته مع أرشيف المشرف والمدير!`);
+    if (cloudEnabled && db) {
+      // الوضع السحابي: نكتب مباشرة في Firestore، وسيصل التحديث تلقائياً
+      // لكل الأجهزة المفتوحة (بما فيها جهاز المشرف/المدير) عبر onSnapshot
+      const targetId = selectedPrepId || generateId();
+      const docPayload = selectedPrepId
+        ? { ...payload }
+        : { ...payload, id: targetId, createdAt: new Date().toISOString() };
+
+      db.collection("preparations").doc(targetId).set(docPayload, { merge: true })
+        .then(() => {
+          if (!selectedPrepId) setSelectedPrepId(targetId);
+          if (!silent) {
+            showToast(selectedPrepId
+              ? `🔄 تم تحديث التحضير وسيظهر فوراً عند المشرف والمدير من أي جهاز!`
+              : `☁️ تم حفظ التحضير في السحابة وسيظهر فوراً عند المشرف والمدير من أي جهاز!`);
+          }
+        })
+        .catch(err => {
+          addLog(`🔴 فشل الحفظ السحابي: ${err.message}`);
+          showToast(`❌ تعذّر حفظ التحضير في السحابة: ${err.message}`, 'error');
+        });
     } else {
-      const newId = generateId();
-      const newDoc = { ...payload, id: newId, createdAt: new Date().toISOString() };
-      setPreparations(prev => [newDoc, ...prev]);
-      setSelectedPrepId(newId);
-      if (!silent) showToast(`📁 تم حفظ التحضير وإضافته لأرشيف المدرسة بنجاح!`);
+      // وضع احتياطي محلي فقط (بدون ربط سحابي) - كما كان سابقاً
+      if (selectedPrepId) {
+        setPreparations(prev => prev.map(p => p.id === selectedPrepId ? { ...p, ...payload, id: selectedPrepId } : p));
+        if (!silent) showToast(`🔄 تم تحديث التحضير محلياً (⚠️ لم يتم ربط السحابة بعد، لن يظهر على أجهزة أخرى)`);
+      } else {
+        const newId = generateId();
+        const newDoc = { ...payload, id: newId, createdAt: new Date().toISOString() };
+        setPreparations(prev => [newDoc, ...prev]);
+        setSelectedPrepId(newId);
+        if (!silent) showToast(`📁 تم حفظ التحضير محلياً (⚠️ لم يتم ربط السحابة بعد، لن يظهر على أجهزة أخرى)`);
+      }
     }
 
     logActivity(selectedPrepId ? "تعديل تحضير" : "إنشاء تحضير جديد", `حفظ درس [${securedPrep.basicInfo?.lessonTitle}] لمادة [${securedPrep.basicInfo?.subject}]`, securedPrep.basicInfo?.teacherName);
@@ -722,11 +812,23 @@ function App() {
 
   const confirmDeletePrep = () => {
     if (!prepToDeleteId) return;
-    setPreparations(prev => prev.filter(p => p.id !== prepToDeleteId));
-    logActivity("حذف تحضير نهائي", `تم حذف التحضير ذو المعرف [${prepToDeleteId}]`, "مدير المدرسة الموقر");
-    if (selectedPrepId === prepToDeleteId) createNewDraft();
+    const idToDelete = prepToDeleteId;
+
+    if (cloudEnabled && db) {
+      db.collection("preparations").doc(idToDelete).delete()
+        .then(() => showToast('🗑️ تم حذف التحضير نهائياً من السحابة على كل الأجهزة.', 'error'))
+        .catch(err => {
+          addLog(`🔴 فشل الحذف السحابي: ${err.message}`);
+          showToast(`❌ تعذّر حذف التحضير من السحابة: ${err.message}`, 'error');
+        });
+    } else {
+      setPreparations(prev => prev.filter(p => p.id !== idToDelete));
+      showToast('🗑️ تم حذف التحضير محلياً.', 'error');
+    }
+
+    logActivity("حذف تحضير نهائي", `تم حذف التحضير ذو المعرف [${idToDelete}]`, "مدير المدرسة الموقر");
+    if (selectedPrepId === idToDelete) createNewDraft();
     setShowDeleteModal(false); setPrepToDeleteId(null);
-    showToast('🗑️ تم حذف التحضير بنجاح.', 'error');
   };
 
   const getFilteredPreparations = () => {
@@ -983,6 +1085,10 @@ function App() {
                 {currentUserRole === 'teacher' 
                   ? "مساحة المعلم الخاصة لإعداد وتخطيط الدروس اليومية والابتكار" 
                   : "منصة المتابعة المباشرة والاعتماد الفوري لمخططات الدروس"}
+              </p>
+              <p className={`text-[10px] font-bold mt-0.5 flex items-center gap-1 ${cloudEnabled ? 'text-emerald-400' : 'text-amber-400'}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${cloudEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
+                {authStatus}
               </p>
             </div>
           </div>
