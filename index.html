@@ -635,9 +635,18 @@ function App() {
   // نبدأ دائماً بدور المعلم كافتراضي آمن؛ أدوار المشرف/المدير تتطلب كلمة مرور أولاً
   const startRole = requestedAdminRole ? 'teacher' : initialRole;
   const [currentUserRole, setCurrentUserRole] = useState(startRole);
+  // نحاول استرجاع آخر اسم كتبه المعلم على هذا الجهاز، حتى لا يُضطر لكتابته من جديد
+  // في كل مرة يفتح فيها الرابط (يبقى قابلاً للتعديل يدوياً في أي وقت)
+  const getRememberedTeacherName = () => {
+    try {
+      return localStorage.getItem('uae_lesson_planner_teacher_name') || '';
+    } catch (_) {
+      return '';
+    }
+  };
   const [userProfile, setUserProfile] = useState({
     uid: startRole === 'teacher' ? 'teacher_local_1' : startRole,
-    name: startRole === 'teacher' ? 'أستاذ(ة) المادة' : startRole === 'supervisor' ? 'المشرف الأكاديمي المعتمد' : 'مدير المدرسة الموقر',
+    name: startRole === 'teacher' ? (getRememberedTeacherName() || 'أستاذ(ة) المادة') : startRole === 'supervisor' ? 'المشرف الأكاديمي المعتمد' : 'مدير المدرسة الموقر',
     email: `${startRole}@school.ae`,
     role: startRole
   });
@@ -1078,7 +1087,7 @@ function App() {
   const getFilteredPreparations = () => {
     let result = [...preparations];
     if (currentUserRole === 'teacher') {
-      result = result.filter(p => p.basicInfo?.teacherId === userProfile.uid);
+      result = result.filter(p => (p.basicInfo?.teacherName || '').trim() && (p.basicInfo?.teacherName || '').trim() === (userProfile.name || '').trim());
     }
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -1398,6 +1407,7 @@ function App() {
                   name: e.target.value
                 }));
                 handleFieldChange('basicInfo', 'teacherName', e.target.value);
+                try { localStorage.setItem('uae_lesson_planner_teacher_name', e.target.value); } catch (_) {}
               }} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-blue-500" placeholder={t("ادخل اسمك الثنائي")} />
                 </div>
                 <div>
@@ -1443,11 +1453,11 @@ function App() {
               </div>
               
               <div className="space-y-1.5 overflow-y-auto max-h-[250px] pr-1">
-                {preparations.filter(p => p.basicInfo?.teacherId === userProfile.uid).map(prep => <div key={prep.id} onClick={() => loadPreparation(prep)} className={`p-2 rounded-lg cursor-pointer text-[10px] flex justify-between items-center border transition-all ${selectedPrepId === prep.id ? 'bg-blue-600/20 border-blue-500 text-blue-200' : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}>
+                {preparations.filter(p => (p.basicInfo?.teacherName || '').trim() && (p.basicInfo?.teacherName || '').trim() === (userProfile.name || '').trim()).map(prep => <div key={prep.id} onClick={() => loadPreparation(prep)} className={`p-2 rounded-lg cursor-pointer text-[10px] flex justify-between items-center border transition-all ${selectedPrepId === prep.id ? 'bg-blue-600/20 border-blue-500 text-blue-200' : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}>
                     <span className="truncate max-w-[150px] font-bold">{prep.basicInfo?.lessonTitle || t("تحضير بدون عنوان")}</span>
                     <span className="text-[8px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">{prep.basicInfo?.date}</span>
                   </div>)}
-                {preparations.filter(p => p.basicInfo?.teacherId === userProfile.uid).length === 0 && <div className="text-center text-slate-600 text-[10px] py-6 border border-dashed border-slate-800 rounded-lg">{t("\n                    لا توجد مسودات سابقة. اضغط على \"جديد\" للبدء.\n                  ")}</div>}
+                {preparations.filter(p => (p.basicInfo?.teacherName || '').trim() && (p.basicInfo?.teacherName || '').trim() === (userProfile.name || '').trim()).length === 0 && <div className="text-center text-slate-600 text-[10px] py-6 border border-dashed border-slate-800 rounded-lg">{t("\n                    لا توجد مسودات سابقة. اضغط على \"جديد\" للبدء.\n                  ")}</div>}
               </div>
             </div>
 
