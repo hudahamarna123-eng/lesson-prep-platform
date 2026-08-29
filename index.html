@@ -312,6 +312,13 @@ function buildPrintableHTML(data) {
 </html>`;
 }
 const TRANSLATIONS_EN = {
+  "❌ الرجاء اختيار ملف بصيغة PDF فقط.": "❌ Please choose a PDF file only.",
+  "❌ حجم الملف كبير جداً (الحد الأقصى": "❌ File is too large (max",
+  ")، يرجى رفع صفحات الدرس المطلوب فقط بدل الكتاب كاملاً.": "), please upload only the relevant lesson pages instead of the whole book.",
+  "❌ تعذّرت قراءة الملف، حاول ملفاً آخر.": "❌ Could not read the file, try another one.",
+  "📎 تم إرفاق ملف:": "📎 File attached:",
+  "إرفاق صفحات من الكتاب (PDF) — اختياري": "Attach textbook pages (PDF) — optional",
+  "📎 سيتم إرسال الملف المرفق ليقرأه الذكاء الاصطناعي:": "📎 The attached file will be sent for the AI to read:",
   "من": "from",
   "جميع المعلمين (": "All teachers (",
   "بانتظار المراجعة": "Awaiting review",
@@ -687,6 +694,49 @@ function App() {
   const [activePrep, setActivePrep] = useState(JSON.parse(JSON.stringify(EMPTY_PREPARATION)));
   const [isGenerating, setIsGenerating] = useState(false);
   const [userQuery, setUserQuery] = useState("");
+  // 📎 ملف PDF اختياري (صفحات من الكتاب المدرسي) يُرفق مع طلب التوليد
+  // حتى يقرأه الذكاء الاصطناعي فعلياً ويربط التحضير بمحتواه
+  const [attachedPdf, setAttachedPdf] = useState(null); // { name, sizeLabel, base64, mimeType }
+  const [pdfError, setPdfError] = useState("");
+  const MAX_PDF_MB = 9;
+
+  const handlePdfSelected = (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = ""; // يسمح باختيار نفس الملف مرة أخرى لاحقاً لو احتاج المعلم ذلك
+    setPdfError("");
+    if (!file) return;
+    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+      setPdfError(t("❌ الرجاء اختيار ملف بصيغة PDF فقط."));
+      return;
+    }
+    const sizeMb = file.size / (1024 * 1024);
+    if (sizeMb > MAX_PDF_MB) {
+      setPdfError(t("❌ حجم الملف كبير جداً (الحد الأقصى") + ` ${MAX_PDF_MB}MB` + t(")، يرجى رفع صفحات الدرس المطلوب فقط بدل الكتاب كاملاً."));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const base64 = String(reader.result).split(",")[1] || "";
+        setAttachedPdf({
+          name: file.name,
+          sizeLabel: `${sizeMb.toFixed(1)}MB`,
+          base64,
+          mimeType: "application/pdf"
+        });
+        addLog(t("📎 تم إرفاق ملف:") + ` ${file.name} (${sizeMb.toFixed(1)}MB)`);
+      } catch (err) {
+        setPdfError(t("❌ تعذّرت قراءة الملف، حاول ملفاً آخر."));
+      }
+    };
+    reader.onerror = () => setPdfError(t("❌ تعذّرت قراءة الملف، حاول ملفاً آخر."));
+    reader.readAsDataURL(file);
+  };
+
+  const removeAttachedPdf = () => {
+    setAttachedPdf(null);
+    setPdfError("");
+  };
   const [debugLog, setDebugLog] = useState([]);
   const addLog = msg => {
     const time = new Date().toLocaleTimeString('ar-EG', {
@@ -1133,6 +1183,7 @@ function App() {
       return;
     }
     addLog(t("✅ الموضوع موجود، جاري الإرسال..."));
+    if (attachedPdf) addLog(t("📎 سيتم إرسال الملف المرفق ليقرأه الذكاء الاصطناعي:") + ` ${attachedPdf.name}`);
     setIsGenerating(true);
     showToast(t("🪄 جاري إنشاء خطة الدرس باستخدام الذكاء الاصطناعي... يرجى الانتظار."));
     try {
@@ -1146,6 +1197,8 @@ function App() {
 4) الربط بواقع الإمارات (realLifeConnections.uaeApplications) يجب أن يذكر مبادرة أو مشروعاً إماراتياً حقيقياً له علاقة منطقية بموضوع الدرس تحديداً، وليس ذكراً عاماً لمشاريع مثل مترو دبي أو مسبار الأمل ما لم يكن لها علاقة فعلية بالموضوع.
 5) اجعل كل نص مختصراً جداً وموجزاً للغاية (جملة قصيرة واحدة فقط لكل حقل نصي، لا تتجاوز 15 كلمة) حتى تكتمل جميع الأقسام الأربعة عشر كاملة دون اختصار أو حذف أي قسم أو أي عنصر داخل المصفوفات. الإيجاز الشديد أهم من التفصيل هنا.
 6) أجب بصيغة JSON صالح فقط، بدون أي نص إضافي قبله أو بعده وبدون علامات تنسيق Markdown، ويجب أن يطابق الهيكل التالي تماماً (${language === 'en' ? 'بالمحتوى باللغة الإنجليزية بالكامل - Respond with ALL field content written in English, since the requesting teacher works in English' : 'بالمحتوى باللغة العربية'}):
+${attachedPdf ? `
+7) هام جداً: تم إرفاق ملف PDF يحتوي على المادة العلمية الفعلية (صفحات من الكتاب المدرسي) لهذا الدرس. اقرأ محتوى هذا الملف بعناية، واستخرج منه المفاهيم والمصطلحات والأمثلة والتعريفات الفعلية الواردة فيه حرفياً، واستخدمها في تعبئة كل الحقول ذات الصلة (خصوصاً newConcepts وacademicVocabulary ونواتج التعلم ومسار الدرس). يجب أن يعكس التحضير محتوى الملف المرفق تحديداً وليس معلومات عامة عن الموضوع من خارج الملف.` : ''}
 {
   "basicInfo": { "newConcepts": "...", "lessonTitle": "...", "academicVocabulary": "..." },
   "learningOutcomes": [{ "outcome": "...", "domain": "...", "bloomLevel": "...", "successIndicator": "..." }],
@@ -1196,7 +1249,8 @@ function App() {
           signal: controller.signal,
           body: JSON.stringify({
             userPrompt: `موضوع الدرس المطلوب تحضيره بالتفصيل، بحيث يخص هذا الموضوع تحديداً في كل حقل من حقول الـ JSON: "${userQuery.trim()}"`,
-            systemPrompt
+            systemPrompt,
+            attachment: attachedPdf ? { base64: attachedPdf.base64, mimeType: attachedPdf.mimeType } : undefined
           })
         }), hardTimeout]);
       } finally {
@@ -1434,6 +1488,22 @@ function App() {
 
               <div className="space-y-2">
                 <textarea value={userQuery} onChange={e => setUserQuery(e.target.value)} placeholder={t("اكتب موضوع الدرس بالتفصيل ليقوم الذكاء الاصطناعي بتوليد الأقسام الـ 14 كاملة...")} className="w-full h-24 bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-500 resize-none text-right" />
+
+                {/* 📎 إرفاق صفحات من الكتاب المدرسي (PDF) ليقرأها الذكاء الاصطناعي فعلياً */}
+                {!attachedPdf ? <label className="flex items-center justify-center gap-1.5 w-full py-2 border border-dashed border-slate-700 hover:border-amber-500 rounded-xl text-[11px] text-slate-400 hover:text-amber-400 cursor-pointer transition-all">
+                    <span>📎</span>
+                    <span>{t("إرفاق صفحات من الكتاب (PDF) — اختياري")}</span>
+                    <input type="file" accept="application/pdf,.pdf" onChange={handlePdfSelected} className="hidden" />
+                  </label> : <div className="flex items-center justify-between gap-2 w-full py-2 px-3 bg-emerald-950/40 border border-emerald-800 rounded-xl text-[11px]">
+                    <span className="flex items-center gap-1.5 text-emerald-300 truncate">
+                      <span>📄</span>
+                      <span className="truncate max-w-[140px]">{attachedPdf.name}</span>
+                      <span className="text-emerald-500">({attachedPdf.sizeLabel})</span>
+                    </span>
+                    <button onClick={removeAttachedPdf} className="text-rose-400 hover:text-rose-300 font-bold px-1">✕</button>
+                  </div>}
+                {pdfError && <div className="text-[10px] text-rose-400 px-1">{pdfError}</div>}
+
                 <button onClick={generateWithAI} disabled={isGenerating} className="w-full py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-bold text-xs rounded-xl shadow hover:scale-[1.01] transition-all flex items-center justify-center gap-1.5 disabled:opacity-50">
                   {isGenerating ? <span>{t("جاري توليد الخطة... ⏳")}</span> : <span>{t("✨ توليد التحضير الذكي كاملاً")}</span>}
                 </button>
