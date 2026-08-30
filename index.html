@@ -321,6 +321,9 @@ const TRANSLATIONS_EN = {
   "📎 سيتم إرسال الملف المرفق ليقرأه الذكاء الاصطناعي:": "📎 The attached file will be sent for the AI to read:",
   ")، يرجى رفع صفحات الدرس المطلوب فقط بدل الكتاب كاملاً، أو ضغط الملف لتصغير حجمه أولاً.": "), please upload only the relevant lesson pages instead of the whole book, or compress the file first.",
   "من": "from",
+  "مدرسة السلف الصالح الخاصة": "Al-Salaf Al-Saleh Private School",
+  " - جميع الحقوق محفوظة": " - All Rights Reserved",
+  "تطوير: هدى حمارنة لمدرسة السلف الصالح الخاصة": "Developed by Huda Hamarna for Al Salaf Al Saleh Private School",
   "جميع المعلمين (": "All teachers (",
   "بانتظار المراجعة": "Awaiting review",
   "تم التسليم": "Submitted",
@@ -1814,6 +1817,11 @@ ${attachedPdf ? `
             </div>
           </div>
         </div>, document.body)}
+
+      <footer className="no-print border-t border-slate-800 py-3 text-center text-[10px] text-slate-500 bg-slate-950 space-y-0.5">
+        <div>{`© ${new Date().getFullYear()} `}{t(SCHOOL_NAME)}{t(" - جميع الحقوق محفوظة")}</div>
+        <div className="text-slate-600">{t("تطوير: هدى حمارنة لمدرسة السلف الصالح الخاصة")}</div>
+      </footer>
 
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
